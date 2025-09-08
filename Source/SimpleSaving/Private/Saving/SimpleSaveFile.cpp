@@ -2092,7 +2092,6 @@ bool USimpleSaveFile::TriggerPostLevelChange(class UObject *WorldContext)
 	class AActor *pActor = pGameInstance->LevelChangeActor.Get();
 	if (!IsValid(pActor))
 	{
-		UE_LOG(LogTemp, Error, TEXT("No level change actor!"));
 		return false;
 	}
 
@@ -3754,6 +3753,25 @@ bool USimpleSaveFile::HandleRestoreObject_Internal(class FProperty *InProperty, 
 }
 
 //=================================================================
+// Is it a simple property
+//=================================================================
+FORCEINLINE static bool IsSimpleProperty(const FProperty *InProperty)
+{
+	if (CastField<FStructProperty>(InProperty) != NULL)
+		return false;
+
+	const FObjectPropertyBase* pObjectProperty = CastField<FObjectPropertyBase>(InProperty);
+	if ( pObjectProperty && 
+		!pObjectProperty->PropertyClass->IsChildOf(UVisual::StaticClass()) &&
+		!pObjectProperty->PropertyClass->IsChildOf(UDataAsset::StaticClass()) &&
+		!pObjectProperty->PropertyClass->IsChildOf(UStreamableRenderAsset::StaticClass()) &&
+		!pObjectProperty->PropertyClass->IsChildOf(UDataTable::StaticClass()) )
+		return false;
+
+	return true;
+}
+
+//=================================================================
 // 
 //=================================================================
 void USimpleSaveFile::SaveCustomData_Internal(class USimpleSaveFile *InFile, class UObject *InObject, TMap<FName, FString> &Singles, TMap<FName, FArrayData> &Arrays, TMap<FName, FMapData> &Maps, bool SimplePropertiesOnly, TArray<FName> *IgnoredProperties, bool InIgnoreNativeProperties)
@@ -3791,7 +3809,7 @@ void USimpleSaveFile::SaveCustomData_Internal(class USimpleSaveFile *InFile, cla
 		FArrayProperty* ArrayProperty = CastField<FArrayProperty>(*Property);
 		if (ArrayProperty)
 		{
-			if (SimplePropertiesOnly)
+			if (SimplePropertiesOnly && !IsSimpleProperty(ArrayProperty->Inner))
 				continue;
 
 			//Check can save
@@ -3821,7 +3839,10 @@ void USimpleSaveFile::SaveCustomData_Internal(class USimpleSaveFile *InFile, cla
 		FMapProperty* MapProperty = CastField<FMapProperty>(*Property);
 		if (MapProperty)
 		{
-			if (SimplePropertiesOnly)
+			if (SimplePropertiesOnly && !IsSimpleProperty(MapProperty->GetKeyProperty()))
+				continue;
+
+			if (SimplePropertiesOnly && !IsSimpleProperty(MapProperty->GetValueProperty()))
 				continue;
 
 			if (!InFile && !CheckSaveObjectProperty(MapProperty->GetKeyProperty(), NULL))
@@ -3864,18 +3885,9 @@ void USimpleSaveFile::SaveCustomData_Internal(class USimpleSaveFile *InFile, cla
 			continue;
 		}
 
-		if (SimplePropertiesOnly)
+		if (SimplePropertiesOnly && !IsSimpleProperty(*Property))
 		{
-			if (CastField<FStructProperty>(*Property) != NULL)
-			{
-				continue;
-			}
-
-			FObjectPropertyBase *pObjectProperty = CastField<FObjectPropertyBase>(*Property);
-			if (pObjectProperty && !pObjectProperty->PropertyClass->IsChildOf(UDataAsset::StaticClass()))
-			{
-				continue;
-			}
+			continue;
 		}
 
 		//Special case for Variable[X] type of arrays
